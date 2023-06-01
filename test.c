@@ -1,20 +1,13 @@
 #include <stdio.h>
+#include <stdlib.h>
 
-struct T {
-	char* name;	
-};
-
-void printT(struct T* t, int a) {
-	printf("%s: %d\n", t->name, a);
+void test(int size, int nums[]) {
+	for(int i = 0; i < size; i++) {
+		printf("%d\n", nums[i]);
+	}
 }
-
-
 int main() {
-	int a = 10;
-	struct T test;
-	test.name = "Haiii";
-
-	printT(&test, a);
-
+	int nums[3] = { 5, 2, 3 };
+	test(3, nums);
 	return 0;
 }

@@ -1,5 +1,6 @@
 package de.drgn.concept
 
+import de.drgn.irbuilder.IRBuilder
 import java.util.*
 
 val opens = listOf('(', '{', '[')
@@ -115,3 +116,14 @@ fun Line.getOperators(vararg operators: String): Triple<Pair<C, String>, Line, L
 	}
 	return last
 }
+
+fun<T> List<T>.addArgs(isVararg: Boolean = false, transform: (T) -> String = { it.toString() }): String {
+	val sb = StringBuilder()
+	sb.append(joinToString(transform = transform))
+	if(isVararg) {
+		if(isNotEmpty()) sb.append(", ")
+		sb.append("...")
+	}
+	return sb.toString()
+}
+fun Char.isName() = isLetterOrDigit() || this == '_'

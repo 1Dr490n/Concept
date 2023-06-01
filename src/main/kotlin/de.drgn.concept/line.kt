@@ -69,7 +69,7 @@ class Line(l: List<C> = mutableListOf(), val file: DFile = l[0].file) {
 		for(i in l.indices) {
 			if(l[i].c == s[o]) o++
 			else o = 0
-			if(o == s.length) return substring(0, i - o + 1)
+			if(o == s.length) return substring(i + 1)
 		}
 		return alt
 	}
