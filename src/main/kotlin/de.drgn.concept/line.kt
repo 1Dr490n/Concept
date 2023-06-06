@@ -85,12 +85,23 @@ class Line(l: List<C> = mutableListOf(), val file: DFile = l[0].file) {
 			Line(l.subList(lastIndex + 1, l.size), file)
 		} else this
 	}
+	fun substringAfterLast(s: String, alt: Line = this): Line {
+		var o = 0
+		for(i in length - 1 downTo 0) {
+			if(l[i].c == s[s.length - o - 1]) {
+				if(++o == s.length) return substring(i + s.length)
+			}
+			else o = 0
+		}
+		return alt
+	}
 	fun clear() = l.clear()
 	fun isEmpty() = l.isEmpty()
 	fun isNotEmpty() = l.isNotEmpty()
 	fun drop(n: Int) = Line(l.drop(n), file)
 	fun dropLast(n: Int) = Line(l.dropLast(n), file)
 	fun last() = l.last()
+	fun first() = l.first()
 	fun isBlank() = str().isBlank()
 	fun isNotBlank() = str().isNotBlank()
 	fun startsWith(c: Char) = l.firstOrNull()?.c == c

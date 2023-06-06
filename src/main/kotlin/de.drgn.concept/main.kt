@@ -2,25 +2,37 @@ package de.drgn.concept
 
 import de.drgn.irbuilder.FuncSignature
 import de.drgn.irbuilder.IRBuilder
-import de.drgn.irbuilder.types.TPtr
-import de.drgn.irbuilder.types.TVoid
-import de.drgn.irbuilder.types.tI64
+import de.drgn.irbuilder.types.*
 import de.drgn.irbuilder.values.VGlobal
 import java.io.File
 import java.util.*
 import kotlin.system.exitProcess
 
 val nameRegex = Regex("[a-zA-Z_][0-9a-zA-Z_]*")
-val malloc = FuncSignature(TPtr, tI64) to VGlobal("malloc", TPtr)
-val free = FuncSignature(TVoid, TPtr) to VGlobal("free", TPtr)
-val printf = FuncSignature(TVoid, TPtr, isVararg = true) to VGlobal("printf", TPtr)
+val malloc = FuncSignature(TPtr, tI64) to VGlobal("malloc")
+val free = FuncSignature(TVoid, TPtr) to VGlobal("free")
+val printf = FuncSignature(TVoid, TPtr, isVararg = true) to VGlobal("printf")
+val atoi = FuncSignature(tI32, TPtr) to VGlobal("atoi")
+val srand = FuncSignature(TVoid, tI32) to VGlobal("srand")
+val rand = FuncSignature(tI32) to VGlobal("rand")
 
 fun main(args: Array<String>) {
-    IRBuilder.declareFunc("malloc", tI64)
-    IRBuilder.declareFunc("free", TVoid)
-    IRBuilder.declareFunc("printf", TVoid)
+
+    IRBuilder.declareFunc("malloc", malloc.first)
+    IRBuilder.declareFunc("free", free.first)
+    IRBuilder.declareFunc("printf", printf.first)
+    IRBuilder.declareFunc("atoi", atoi.first)
+    IRBuilder.declareFunc("srand", srand.first)
+    IRBuilder.declareFunc("rand", rand.first)
+
     val files = mutableListOf<DFile>()
 
+    val stdFile = File("_TEMP_std.ccpt")
+    stdFile.writeBytes(object{}.javaClass.getResourceAsStream("/std.ccpt").readBytes())
+    stdFile.deleteOnExit()
+    val rndFile = File("_TEMP_rnd.ccpt")
+    rndFile.writeBytes(object{}.javaClass.getResourceAsStream("/random.ccpt").readBytes())
+    rndFile.deleteOnExit()
     args.let {
         val l = mutableListOf<File>()
         fun addAll(file: File) {
@@ -29,7 +41,9 @@ fun main(args: Array<String>) {
                 l += file
             }
         }
-        addAll(File("lib"))
+
+        addAll(stdFile)
+        addAll(rndFile)
         it.forEach {
             addAll(File(it))
         }
@@ -103,7 +117,7 @@ fun main(args: Array<String>) {
                 }
                 c in closes -> {
                     val b = closes[opens.indexOf(brackets.pop())]
-                    if(b != c) illegal("Expected '$b' but found '$c'", C(dfile, line, column, c))
+                    if(b != c) illegal("Expected '$b'", C(dfile, line, column, c))
                     withoutComments += C(dfile, line, column, c)
                 }
                 else -> withoutComments += C(dfile, line, column, c)
@@ -114,8 +128,10 @@ fun main(args: Array<String>) {
             } else column++
         }
         val cleanedUp = Line(file = dfile)
+        inString = false
         withoutComments.forEachIndexed { i, c ->
-            if(!c.c.isWhitespace() || (cleanedUp.last().c.isName() && (i + 1 < withoutComments.length && withoutComments[i + 1].c.isName()))) {
+            if(c.c == '"') inString = !inString
+            if(inString || (!c.c.isWhitespace() || (cleanedUp.last().c.isName() && (i + 1 < withoutComments.length && withoutComments[i + 1].c.isName())))) {
                 cleanedUp += c
             }
         }
@@ -133,14 +149,16 @@ fun main(args: Array<String>) {
     files.forEach {
         parse(it)
     }
-    ast.forEach {
-        tree += it.tree()
+    var i = 0
+    while(i < ast.size) {
+        val t = ast[i++].tree()
+        if(t != null) tree += t
     }
     ast.forEach {
-        it.typesDone()
+        it.typesDone(null)
     }
-    ast.forEach {
-        it.code()
+    for(e in ast) {
+        e.code(null)
     }
     var mainFunc: TreeFuncDef? = null
     tree.forEach {
@@ -154,23 +172,27 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
     IRBuilder.func("main", mainFunc!!.returns.ir()) {
-        callFunc(FuncSignature(mainFunc!!.returns.ir()), VGlobal("\"main::main\"", TPtr))
+        ret(callFunc(FuncSignature(mainFunc!!.returns.ir()), VGlobal("\"main::main\"")))
     }
     File("test.ll").writeText(IRBuilder.build())
-    val compile = Runtime.getRuntime().exec("clang test.ll")
+    val compiled = File("compiled.o")
+    compiled.deleteOnExit()
+    compiled.writeBytes(object{}.javaClass.getResourceAsStream("/compiled.o").readBytes())
+    val compile = Runtime.getRuntime().exec("clang test.ll compiled.o")
     compile.inputStream.bufferedReader().forEachLine {
         println(it)
     }
     compile.errorStream.bufferedReader().forEachLine {
-        println("$RED$it")
+        println("$RED$it$RESET")
     }
 }
 const val RESET = "\u001b[0m"
 const val RED = "\u001b[0;31m"
 const val CYAN = "\u001b[0;36m"
+const val YELLOW = "\u001b[0;33m"
 
 fun illegal(reason: String, l: Line): Nothing {
-    println("${RED}Error: $RESET$reason")
+    println("${RED}Error: $reason")
     val lines = mutableMapOf<Pair<DFile, Int>, Unit>()
     l.l.forEach {
         lines[it.file to it.line] = Unit
@@ -191,6 +213,28 @@ fun illegal(reason: String, l: Line): Nothing {
     }
     throw Exception()
     //exitProcess(1)
+}
+fun unreachable(l: Line) {
+    println("${YELLOW}Warning: Unreachable code")
+    val lines = mutableMapOf<Pair<DFile, Int>, Unit>()
+    l.l.forEach {
+        lines[it.file to it.line] = Unit
+    }
+    val errorLines = lines.map { line ->
+        val sb = StringBuilder()
+        line.key.first.f.readLines()[line.key.second].forEachIndexed { i, c ->
+            if(!c.isWhitespace() && l.l.any {
+                    it.line == line.key.second && it.column == i }) sb.append("$YELLOW$c$RESET")
+            else sb.append(c)
+        }
+        Triple(line.key, sb.toString().trimEnd().replace("\t", "    "), "${line.key.first.f}:${line.key.second + 1}")
+    }
+    val trim = errorLines.minOf { it.second.takeWhile { it.isWhitespace() }.length }
+    val add = errorLines.maxOf { it.third.length }
+    errorLines.forEach {
+        println("$CYAN${it.third} ${" ".repeat(add - it.third.length)}$RESET${it.second.drop(trim)}")
+    }
+    //Exception().printStackTrace()
 }
 fun illegalExists(type: String, l: Line, at: Line): Nothing {
     println("${RED}Error: $RESET$type already exists")

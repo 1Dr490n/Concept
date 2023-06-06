@@ -59,6 +59,26 @@ fun Line.beforeBrackets(): Pair<Line, Line>? {
 	}
 	return null
 }
+fun Line.afterBrackets(): Pair<Line, Line>? {
+	if(length < 2 || first().c !in opens) return null
+	var inQuotes = false
+	val inParens = Stack<Pair<Int, C>>()
+
+	for(i in l.indices) {
+		val c = get(i)
+		when {
+			c.c == '"' -> inQuotes = !inQuotes
+			inQuotes -> {}
+			c.c in closes -> {
+				if(closes.indexOf(c.c) != inParens.peek().first) illegal("Expected '${closes[closes.indexOf(c.c)]}'", inParens.peek().second)
+				inParens.pop()
+				if(inParens.isEmpty()) return (if(i == length - 1) Line(file = file) else substring(i + 1).trim()) to substring(0, i + 1).trim()
+			}
+			c.c in opens -> inParens += opens.indexOf(c.c) to c
+		}
+	}
+	return null
+}
 
 
 fun Line.getFirstOperators(str: String): Triple<Line, Line, Line>? {
@@ -85,8 +105,8 @@ fun Line.getFirstOperators(str: String): Triple<Line, Line, Line>? {
 
 
 
-fun Line.getOperators(vararg operators: String): Triple<Pair<C, String>, Line, Line>? {
-	var last: Triple<Pair<C, String>, Line, Line>? = null
+fun Line.getOperators(vararg operators: String): Triple<Line, Line, Line>? {
+	var last: Triple<Line, Line, Line>? = null
 	var inQuotes = false
 	val inParens = Stack<Int>()
 	var lastOperator = 2
@@ -109,7 +129,7 @@ fun Line.getOperators(vararg operators: String): Triple<Pair<C, String>, Line, L
 				if(o == ":" && (substring(i).startsWith("::") || substring(i - 1).startsWith("::"))) return@forEachIndexed
 				if(o == "!" && (substring(i).startsWith("!!") || substring(i - 1).startsWith("!!"))) return@forEachIndexed
 				if(o == "?" && substring(i).startsWith("?.")) return@forEachIndexed
-				last = Triple(c to o, if(i == 0) Line(file, "", 0, 0) else substring(0, i).trim(), substring(i + o.length).trim())
+				last = Triple(substring(i, o.length + i), if(i == 0) Line(file, "", 0, 0) else substring(0, i).trim(), substring(i + o.length).trim())
 				lastOperator = 2
 			}
 		}
@@ -127,3 +147,36 @@ fun<T> List<T>.addArgs(isVararg: Boolean = false, transform: (T) -> String = { i
 	return sb.toString()
 }
 fun Char.isName() = isLetterOrDigit() || this == '_'
+
+fun Line.template(): Pair<Line, List<Line>>? {
+	val opens = opens + '<'
+	val closes = closes + '>'
+	if(length < 2 || last().c != '>') return null
+	var inQuotes = false
+	val inParens = Stack<Pair<Int, C>>()
+
+	for(i in length - 1 downTo 0) {
+		val c = get(i)
+		when {
+			c.c == '"' -> inQuotes = !inQuotes
+			inQuotes -> {}
+			substring(i).startsWith("&&") || substring(i - 1).startsWith("&&")
+					|| substring(i).startsWith("||") || substring(i - 1).startsWith("||")
+					|| substring(i).startsWith("==") || substring(i - 1).startsWith("==") -> return null
+
+			c.c in opens -> {
+				if(opens.indexOf(c.c) != inParens.peek().first) {
+					if(c.c == '<') return null
+					illegal("Expected '${opens[opens.indexOf(c.c)]}'", inParens.peek().second)
+				}
+				inParens.pop()
+				if(inParens.isEmpty()) {
+					return (if(i == 0) Line(file = file)
+							else substring(0, i).trim()) to substring(i).trim().drop(1).dropLast(1).splitBrackets(',')
+				}
+			}
+			c.c in closes -> inParens += closes.indexOf(c.c) to c
+		}
+	}
+	return null
+}
